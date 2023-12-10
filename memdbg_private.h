@@ -30,7 +30,7 @@
 
 //----------------THREADS API----------------//
 
-#if defined(_WIN32) // && !defined(__MINGW32__)
+#if defined(_WIN32) && !defined(__MINGW32__)
     #include <windows.h>
     #define MEMDBG_USE_WINAPI
     int win32_clock_gettime(int UNUSED(unused), struct timespec *ts);

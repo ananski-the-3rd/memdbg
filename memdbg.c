@@ -249,7 +249,7 @@ int _memdbg_fclose(FILE *stream, const char *_file, const int _line, const char 
 
 //----------------PUBLIC UTILS----------------//
 
-/// @brief Initiates memdbg. If you don't call this function, MEMDBG_DEFAULT_MODE will be used.
+/// @brief Initiates memdbg. You don't have to call this function (MEMDBG_DEFAULT_MODE will be used).
 /// @param mode specifies the options that will be used throughout the runtime:
 /// @note MEMDBG_OPTIONS_MULTIPLE_ERRORS - memdbg will attempt to correct any errors it finds, such that more than one error may be reported per run. Recommended for larger projects.
 /// @note MEMDBG_OPTIONS_OVERALLOC - memdbg will over-allocate all allocations. This is required for finding potential buffer overflows. May be memory intensive.
