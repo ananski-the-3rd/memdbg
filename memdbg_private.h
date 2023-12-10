@@ -5,6 +5,7 @@
 #include <stdbool.h>
 #include <time.h>
 #include <string.h>
+#include <stdatomic.h>
 #include "memdbg.h"
 
 
@@ -16,7 +17,7 @@
 #define MEMDBG_OVERALLOC_FILL_VALUE UINT8_C(0x48)
 
 #define MEMDBG_MAP_SIZE (((MEMDBG_EXPECTED_N_ALLOCS - (MEMDBG_EXPECTED_N_ALLOCS % 60) + 23) * 13) / 10) // size tends to be prime this way
-#define MEMDBG_MAPTEX_SIZE (((MEMDBG_EXPECTED_N_ALLOCS + 3) * 13) / 10)
+#define MEMDBG_MAPTEX_SIZE (((MEMDBG_EXPECTED_N_THREADS + 3) * 13) / 10)
 #define MEMDBG_MSG_SIZE 1024
 
 #define N_COLUMNS_IN_ERROR_FILE 7
@@ -29,7 +30,7 @@
 
 //----------------THREADS API----------------//
 
-#if defined(_WIN32) && !defined(__MINGW32__)
+#if defined(_WIN32) // && !defined(__MINGW32__)
     #include <windows.h>
     #define MEMDBG_USE_WINAPI
     int win32_clock_gettime(int UNUSED(unused), struct timespec *ts);
@@ -48,21 +49,18 @@
             if (WaitForSingleObject(th, 10000))          \
                 _memdbg_Panik("Could not join thread!"); \
         } while (0)
-    #define MEMDBG_THREAD_EXIT(p_err_code) ExitThread((DWORD)(*(p_err_code)))
 
-    typedef HANDLE memdbg_mutex_t;
-    #define MEMDBG_MUTEX_INITIALIZER NULL
-    #define MEMDBG_MUTEX_INIT(mutex) do {mutex = CreateMutex(NULL, FALSE, NULL);} while (0)
-    #define MEMDBG_MUTEX_LOCK(mutex)  WaitForSingleObject(mutex, INFINITE)
-    #define MEMDBG_MAPTEX_INIT(maptex)                                  \
-        do {                                                         \
+    typedef CRITICAL_SECTION memdbg_mutex_t;
+    #define MEMDBG_MUTEX_INIT(mutex) InitializeCriticalSection(&mutex)
+    #define MEMDBG_MAPTEX_INIT(maptex)                          \
+        do {                                                    \
             for (uint32_t i = 0; i < MEMDBG_MAPTEX_SIZE; i++) { \
-                maptex[i] = CreateMutex(NULL, FALSE, NULL);          \
-            }                                                        \
+                InitializeCriticalSection(&maptex[i]);          \
+            }                                                   \
         } while (0)
 
-    #define MEMDBG_MUTEX_UNLOCK(mutex) ReleaseMutex(mutex)
-
+    #define MEMDBG_MUTEX_LOCK(mutex) EnterCriticalSection(&mutex)
+    #define MEMDBG_MUTEX_UNLOCK(mutex) LeaveCriticalSection(&mutex)
     #define MEMDBG_SLEEP(ms) Sleep(ms)
 #else  // PTHREADS or WINPTHREADS
     #include <pthread.h>
@@ -82,14 +80,11 @@
                 _memdbg_Panik("Could not join thread!"); \
         } while (0)
     
-    #define MEMDBG_THREAD_EXIT(p_err_code) pthread_exit(p_err_code)
-
     typedef pthread_mutex_t memdbg_mutex_t;
-    #define MEMDBG_MUTEX_INITIALIZER PTHREAD_MUTEX_INITIALIZER
     #define MEMDBG_MUTEX_INIT(mutex) pthread_mutex_init(&mutex, NULL)
-    #define MEMDBG_MAPTEX_INIT(maptex)                                    \
+    #define MEMDBG_MAPTEX_INIT(maptex)                                     \
         do {                                                               \
-            for (uint32_t i = 0; i < MEMDBG_MAPTEX_SIZE; i++) {       \
+            for (uint32_t i = 0; i < MEMDBG_MAPTEX_SIZE; i++) {            \
                 pthread_mutexattr_t attr;                                  \
                 pthread_mutexattr_init(&attr);                             \
                 pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE); \
@@ -99,7 +94,6 @@
 
     #define MEMDBG_MUTEX_LOCK(mutex) pthread_mutex_lock(&mutex)
     #define MEMDBG_MUTEX_UNLOCK(mutex) pthread_mutex_unlock(&mutex)
-
     #define MEMDBG_SLEEP(ms) usleep(1000*ms)
 #endif
 #define MEMDBG_MAPTEX_LOCK(idx) MEMDBG_MUTEX_LOCK(memdbg_maptex[(idx) % (MEMDBG_MAPTEX_SIZE)])

@@ -259,19 +259,13 @@ void memdbg_Init(memdbg_mode_t mode) {
     static volatile bool memdbg_init_is_done = false;
     if (memdbg_init_is_done) return;
 
-    static memdbg_mutex_t mutex = MEMDBG_MUTEX_INITIALIZER;
-    #ifdef MEMDBG_USE_WINAPI  // workaround for initiating static mutex
-        HANDLE temp = CreateMutex(NULL, FALSE, NULL);
-        if (InterlockedCompareExchangePointer((PVOID *)&mutex, (PVOID)temp, NULL) != NULL) {
-            CloseHandle(temp);
+    // workaround for static init
+    {
+        static atomic_flag temp = ATOMIC_FLAG_INIT;
+        while (atomic_flag_test_and_set(&temp)) {
+            if (memdbg_init_is_done) return;
+            MEMDBG_SLEEP(1);
         }
-    #endif
-
-    MEMDBG_MUTEX_LOCK(mutex);
-    if (memdbg_init_is_done) {
-        // for threads that stopped on the lock during the execution of this function
-        MEMDBG_MUTEX_UNLOCK(mutex);
-        return;
     }
 
     MEMDBG_MAPTEX_INIT(memdbg_maptex);
@@ -296,8 +290,6 @@ void memdbg_Init(memdbg_mode_t mode) {
     }
 
     memdbg_init_is_done = true;
-
-    MEMDBG_MUTEX_UNLOCK(mutex);
 
     return;
 }
