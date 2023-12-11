@@ -1,0 +1,15 @@
+# file extensions
+*.[oa]
+*.exe
+*.out
+
+# specific files
+test0.c
+error_checking.txt
+Cover Photo.png
+memdbg*.csv
+
+# entire folders 
+bin/**
+.vscode/**
+build/**

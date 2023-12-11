@@ -2,70 +2,68 @@
 
 #ifdef MEMDBG_ENABLED
 
-static const char *FUNC_NAME_TABLE[N_FUNC_TYPES] = {"malloc", "calloc", "realloc", "free", "fopen", "fopen_s", "fclose", "MEMDBG"};
-static const char *FILE_PATHS[N_OUTPUT_FILES] = {
-    [ERROR_FILE] = "memdbg_error_log.csv",
-    [REPORT_FILE] = "memdbg_full_report.csv"
+static const char *FUNC_NAME_TABLE[_MEMDBG_N_FUNC_TYPES] = {"malloc", "calloc", "realloc", "free", "fopen", "fopen_s", "fclose", "MEMDBG"};
+
+static memdbg_files_t memdbg_files = {
+    .error.path = "memdbg_error_log.csv",
+    .error.id = NULL,
+    .report.path = "memdbg_full_report.csv",
+    .report.id = NULL
 };
 
 static memdbg_mode_t memdbg_mode = 0;
 
 static memdbg_map_t memdbg_map[MEMDBG_MAP_SIZE] = {0};
 
-static FILE *memdbg_fid[N_OUTPUT_FILES] = {NULL, NULL};
-
 static memdbg_mutex_t memdbg_maptex[MEMDBG_MAPTEX_SIZE]; // to be locked right before the first reference to an item in memdbg_map
 static memdbg_mutex_t memdbg_mode_mutex;
 
 //----------------MEMORY FUNCTION OVERRIDES----------------//
 
-void *_memdbg_malloc(size_t sz, const char *_file, const int _line, const char *_func) {
+void *_memdbg_malloc(size_t sz, const _memdbg_info_t info) {
     memdbg_Init(MEMDBG_DEFAULT_MODE); // only done once
-    memdbg_func_enum_t func_idx = MALLOC_IDX;
     
-    _memdbg_checkAllocSize0(sz, _file, _line, _func, func_idx);
+    _memdbg_checkAllocSize0(sz, info);
     
     // Overallocate on both sides if the option is on
     size_t overalloc_total = 2 * MEMDBG_OVERALLOC_AMOUNT_BYTES * memdbg_optionCheck(MEMDBG_OPTIONS_OVERALLOC);
     void *res = (malloc)(sz + overalloc_total);
     
-    if (_memdbg_checkAllocNull(res, sz, _file, _line, _func, func_idx)) {
+    if (_memdbg_checkAllocNull(res, sz, info)) {
         return NULL;
     }
 
-    memdbg_item_t item = _memdbg_itemInit((uintptr_t)res, (uintptr_t[]){(uintptr_t)sz, INT_NULL}, !!overalloc_total,
-                                          _file, _line, _func, func_idx);
+    memdbg_item_t item = _memdbg_itemInit((uintptr_t)res, (uintptr_t[]){(uintptr_t)sz, INT_NULL}, !!overalloc_total, info);
+
     _memdbg_itemInsert(item);
     _memdbg_itemLog(item);
 
     return (void *)item.m.ptr;
 }
 
-void *_memdbg_calloc(size_t sz, const char *_file, const int _line, const char *_func) {
+void *_memdbg_calloc(size_t sz, const _memdbg_info_t info) {
     memdbg_Init(MEMDBG_DEFAULT_MODE); // only done once
-    memdbg_func_enum_t func_idx = CALLOC_IDX;
 
-    _memdbg_checkAllocSize0(sz, _file, _line, _func, func_idx);
+    _memdbg_checkAllocSize0(sz, info);
 
     // Overallocate on both sides if the option is on
     size_t overalloc_total = 2 * MEMDBG_OVERALLOC_AMOUNT_BYTES * memdbg_optionCheck(MEMDBG_OPTIONS_OVERALLOC);
     void *res = (calloc)(1, sz + overalloc_total);
     
-    if (_memdbg_checkAllocNull(res, sz, _file, _line, _func, func_idx)) {
+    if (_memdbg_checkAllocNull(res, sz, info)) {
         return NULL;
     }
 
-    memdbg_item_t item = _memdbg_itemInit((uintptr_t)res, (uintptr_t[]){(uintptr_t)sz, INT_NULL}, !!overalloc_total,
-                                          _file, _line, _func, func_idx);
+    memdbg_item_t item = _memdbg_itemInit((uintptr_t)res, (uintptr_t[]){(uintptr_t)sz, INT_NULL}, !!overalloc_total, info);
+
     _memdbg_itemInsert(item);
     _memdbg_itemLog(item);
 
     return (void *)item.m.ptr;
 }
 
-void *_memdbg_realloc(void *ptr, size_t sz, const char *_file, const int _line, const char *_func) {
+void *_memdbg_realloc(void *ptr, size_t sz, const _memdbg_info_t info) {
     memdbg_Init(MEMDBG_DEFAULT_MODE); // only done once
-    memdbg_func_enum_t func_idx = REALLOC_IDX;
 
     // realloc is basically 'free()' + 'malloc()'. free_item should be the 2nd half of an existing item, and alloc_item the 1st half of a new item
     
@@ -78,36 +76,36 @@ void *_memdbg_realloc(void *ptr, size_t sz, const char *_file, const int _line, 
     memdbg_bucket_t *bucket = _memdbg_itemLookup((uintptr_t)ptr);
     void *free_arg = ptr;
 
-    if (bucket == NULL || _memdbg_checkNotPreviously(bucket->n_items, ptr, _file, _line, _func, func_idx)) {
+    if (bucket == NULL || _memdbg_checkNotPreviously(bucket->n_items, ptr, info)) {
         free_arg = NULL;  // If ptr was not previously allocated we NULL it to avoid crash (assuming MEMDBG_OPTIONS_MULTIPLE_ERRORS is on)
     } else {
         free_item = &bucket->items[bucket->n_items - 1];
         if (free_item->m.is_overallocd) {
             free_arg = (char *)free_arg - MEMDBG_OVERALLOC_AMOUNT_BYTES; // free what was originally allocd
         }
-        if (_memdbg_checkAlready(free_item, ptr, _file, _line, _func, func_idx)) {
+        if (_memdbg_checkAlready(free_item, ptr, info)) {
             free_item = &empty_item;
             free_arg = NULL;  // If ptr was already freed we NULL it to avoid crash (assuming MEMDBG_OPTIONS_MULTIPLE_ERRORS is on)
         } else {
-            _memdbg_checkBufferOverflow(free_item, _file, _line, _func, func_idx);
+            _memdbg_checkBufferOverflow(free_item, info);
         }
     }
-    _memdbg_itemFill(free_item, (uintptr_t)ptr, _file, _line, _func, func_idx); 
+    _memdbg_itemFill(free_item, (uintptr_t)ptr, info); 
 
     // Mixed stage - 'free()' + 'malloc()'
-    _memdbg_checkAllocSize0(sz, _file, _line, _func, func_idx);
+    _memdbg_checkAllocSize0(sz, info);
 
     // Overallocate on both sides if the option is on
     size_t overalloc_total = 2 * MEMDBG_OVERALLOC_AMOUNT_BYTES * memdbg_optionCheck(MEMDBG_OPTIONS_OVERALLOC);
     void *res = (realloc)(free_arg, sz + overalloc_total);
     
-    if (_memdbg_checkAllocNull(res, sz, _file, _line, _func, func_idx)) {
+    if (_memdbg_checkAllocNull(res, sz, info)) {
         // If there is not enough memory, the old memory block is NOT FREED - so don't log item
         MEMDBG_MAPTEX_UNLOCK(map_idx);
         return NULL;
     }
-    memdbg_item_t alloc_item = _memdbg_itemInit((uintptr_t)res, (uintptr_t[]){(uintptr_t)sz, INT_NULL}, !!overalloc_total,
-                                                _file, _line, _func, func_idx);
+    memdbg_item_t alloc_item = _memdbg_itemInit((uintptr_t)res, (uintptr_t[]){(uintptr_t)sz, INT_NULL}, !!overalloc_total, info);
+
     // Finish 'free()'
     free_item->m.next = alloc_item.m.ptr;
     _memdbg_itemLog(*free_item);
@@ -120,9 +118,8 @@ void *_memdbg_realloc(void *ptr, size_t sz, const char *_file, const int _line, 
     return (void *)alloc_item.m.ptr;
 }
 
-void _memdbg_free(void *ptr, const char *_file, const int _line, const char *_func) {
+void _memdbg_free(void *ptr, const _memdbg_info_t info) {
     memdbg_Init(MEMDBG_DEFAULT_MODE); // only done once
-    memdbg_func_enum_t func_idx = FREE_IDX;
 
     memdbg_item_t empty_item = {0};
     memdbg_item_t *item = &empty_item;
@@ -132,22 +129,22 @@ void _memdbg_free(void *ptr, const char *_file, const int _line, const char *_fu
     memdbg_bucket_t *bucket = _memdbg_itemLookup((uintptr_t)ptr);
     void *free_arg = ptr;
 
-    if (bucket == NULL || _memdbg_checkNotPreviously(bucket->n_items, ptr, _file, _line, _func, func_idx)) {
+    if (bucket == NULL || _memdbg_checkNotPreviously(bucket->n_items, ptr, info)) {
         free_arg = NULL;  // If ptr was not previously allocated we NULL it to avoid crash (assuming MEMDBG_OPTIONS_MULTIPLE_ERRORS is on)
     } else {
         item = &bucket->items[bucket->n_items - 1];
         if (item->m.is_overallocd) {
             free_arg = (char *)free_arg - MEMDBG_OVERALLOC_AMOUNT_BYTES; // free what was originally allocd
         }
-        if (_memdbg_checkAlready(item, ptr, _file, _line, _func, func_idx)) {
+        if (_memdbg_checkAlready(item, ptr, info)) {
             item = &empty_item;
             free_arg = NULL;  // If ptr was already freed we NULL it to avoid crash (assuming MEMDBG_OPTIONS_MULTIPLE_ERRORS is on)
         } else {
-            _memdbg_checkBufferOverflow(item, _file, _line, _func, func_idx);
+            _memdbg_checkBufferOverflow(item, info);
         }
     }
     
-    _memdbg_itemFill(item, (uintptr_t)ptr, _file, _line, _func, func_idx); 
+    _memdbg_itemFill(item, (uintptr_t)ptr, info); 
 
     (free)(free_arg);
 
@@ -157,12 +154,11 @@ void _memdbg_free(void *ptr, const char *_file, const int _line, const char *_fu
     return;
 }
 
-FILE *_memdbg_fopen(const char *path, const char *mode, const char *_file, const int _line, const char *_func) {
+FILE *_memdbg_fopen(const char *path, const char *mode, const _memdbg_info_t info) {
     memdbg_Init(MEMDBG_DEFAULT_MODE); // only done once
-    memdbg_func_enum_t func_idx = FOPEN_IDX;
 
-    if (_memdbg_checkArgNull(0, path, _file, _line, _func, func_idx) ||
-        _memdbg_checkArgNull(1, mode, _file, _line, _func, func_idx)) {
+    if (_memdbg_checkArgNull(0, path, info) ||
+        _memdbg_checkArgNull(1, mode, info)) {
         return NULL;
     }
     
@@ -171,24 +167,23 @@ FILE *_memdbg_fopen(const char *path, const char *mode, const char *_file, const
 
     err = (fopen_s)(&fid, path, mode);
 
-    if (_memdbg_checkFail(err, _file, _line, _func, func_idx)) {
+    if (_memdbg_checkFail(err, info)) {
         return fid;
     }
 
     memdbg_item_t item = _memdbg_itemInit((uintptr_t)fid, (uintptr_t[]){(uintptr_t)path, (uintptr_t)mode}, false,
-                                          _file, _line, _func, func_idx);
+                                          info);
     _memdbg_itemInsert(item);
     _memdbg_itemLog(item);
     return fid;
 }
 
-errno_t _memdbg_fopen_s(FILE **stream, const char *path, const char *mode, const char *_file, const int _line, const char *_func) {
+errno_t _memdbg_fopen_s(FILE **stream, const char *path, const char *mode, const _memdbg_info_t info) {
     memdbg_Init(MEMDBG_DEFAULT_MODE); // only done once
-    memdbg_func_enum_t func_idx = FOPEN_S_IDX;
 
-    if (_memdbg_checkArgNull(0, stream, _file, _line, _func, func_idx)  ||
-        _memdbg_checkArgNull(1, path, _file, _line, _func, func_idx)    ||
-        _memdbg_checkArgNull(2, mode, _file, _line, _func, func_idx)) {
+    if (_memdbg_checkArgNull(0, stream, info)  ||
+        _memdbg_checkArgNull(1, path, info)    ||
+        _memdbg_checkArgNull(2, mode, info)) {
         return EOF;
     }
 
@@ -196,24 +191,23 @@ errno_t _memdbg_fopen_s(FILE **stream, const char *path, const char *mode, const
     
     err = (fopen_s)(stream, path, mode);
     
-    if (_memdbg_checkFail(err, _file, _line, _func, func_idx)) {
+    if (_memdbg_checkFail(err, info)) {
         return err;
     }
 
-    memdbg_item_t item = _memdbg_itemInit((uintptr_t)*stream, (uintptr_t[]){(uintptr_t)path, (uintptr_t)mode}, false,
-                                          _file, _line, _func, func_idx);
+    memdbg_item_t item = _memdbg_itemInit((uintptr_t)*stream, (uintptr_t[]){(uintptr_t)path, (uintptr_t)mode}, false, info);
+
     _memdbg_itemInsert(item);
     _memdbg_itemLog(item);
     return err;
 }
 
-int _memdbg_fclose(FILE *stream, const char *_file, const int _line, const char *_func) {
+int _memdbg_fclose(FILE *stream, const _memdbg_info_t info) {
     memdbg_Init(MEMDBG_DEFAULT_MODE); // only done once
-    memdbg_func_enum_t func_idx = FCLOSE_IDX;
 
     int res;
 
-    if (_memdbg_checkArgNull(0, stream, _file, _line, _func, func_idx)) {
+    if (_memdbg_checkArgNull(0, stream, info)) {
         return EOF;
     }
 
@@ -222,25 +216,25 @@ int _memdbg_fclose(FILE *stream, const char *_file, const int _line, const char 
     
     memdbg_bucket_t *bucket = _memdbg_itemLookup((uintptr_t)stream);
 
-    if (_memdbg_checkNotPreviously(bucket->n_items, stream, _file, _line, _func, func_idx)) {
+    if (_memdbg_checkNotPreviously(bucket->n_items, stream, info)) {
         MEMDBG_MAPTEX_UNLOCK(map_idx);
         return EOF;
     }
 
     memdbg_item_t *item = &bucket->items[bucket->n_items-1];
-    if (_memdbg_checkAlready(item, stream, _file, _line, _func, func_idx)) {
+    if (_memdbg_checkAlready(item, stream, info)) {
         MEMDBG_MAPTEX_UNLOCK(map_idx);
         return EOF;
     }
 
     res = (fclose)(stream);
 
-    if (_memdbg_checkFail(res, _file, _line, _func, func_idx)) {
+    if (_memdbg_checkFail(res, info)) {
         MEMDBG_MAPTEX_UNLOCK(map_idx);
         return EOF;
     }
 
-    _memdbg_itemFill(item, (uintptr_t)stream, _file, _line, _func, func_idx);
+    _memdbg_itemFill(item, (uintptr_t)stream, info);
     _memdbg_itemLog(*item);
 
     MEMDBG_MAPTEX_UNLOCK(map_idx);
@@ -272,16 +266,16 @@ void memdbg_Init(memdbg_mode_t mode) {
     MEMDBG_MUTEX_INIT(memdbg_mode_mutex);
 
     // Reset output files:
-    _memdbg_fileOpen(ERROR_FILE, "w");
-    if (fputs("TIMESTAMP,FILE,LINE,FUNCTION,DETECTED_AT,CAUSE,FIX\n", memdbg_fid[ERROR_FILE])) {
+    _memdbg_fileOpen(&memdbg_files.error, "w");
+    if (fputs("TIMESTAMP,FILE,LINE,FUNCTION,DETECTED_AT,CAUSE,FIX\n", memdbg_files.error.id)) {
         _memdbg_Panik("Could not write to error log!");
     }
 
-    _memdbg_fileOpen(REPORT_FILE, "w");
-    if (fputs("TIMESTAMP,FILE,LINE,FUNCTION,EVENT\n", memdbg_fid[REPORT_FILE])) {
+    _memdbg_fileOpen(&memdbg_files.report, "w");
+    if (fputs("TIMESTAMP,FILE,LINE,FUNCTION,EVENT\n", memdbg_files.report.id)) {
         _memdbg_Panik("Could not write to report log!");
     }
-    _memdbg_fileClose(REPORT_FILE);
+    _memdbg_fileClose(&memdbg_files.report);
 
     memdbg_modeSet(mode);
 
@@ -314,9 +308,9 @@ memdbg_mode_t memdbg_modeSet(memdbg_mode_t new_mode) {
 
     // "Callbacks" for changing the mode
     if (!(temp & MEMDBG_OPTIONS_PRINT_ALL) && (memdbg_mode & MEMDBG_OPTIONS_PRINT_ALL)) {
-        _memdbg_fileOpen(REPORT_FILE, "a+");
+        _memdbg_fileOpen(&memdbg_files.report, "a+");
     } else if (!(memdbg_mode & MEMDBG_OPTIONS_PRINT_ALL) && (temp & MEMDBG_OPTIONS_PRINT_ALL)) {
-        _memdbg_fileClose(REPORT_FILE);
+        _memdbg_fileClose(&memdbg_files.report);
     }
 
     if (!(temp & MEMDBG_OPTIONS_OVERALLOC) && (memdbg_mode & MEMDBG_OPTIONS_OVERALLOC)) {  // turned on overalloc
@@ -362,10 +356,10 @@ memdbg_mode_t memdbg_optionToggle(memdbg_mode_t option_code) {
 //----------------PRIVATE UTILS----------------//
 
 /// @brief turns an absolute path to a short path indicating the file name and the parent dir
-/// @param _file __FILE__ macro from the original call
-/// @return a pointer just after the 2nd to last file separator in _file
+/// @param info.file __FILE__ macro from the original call
+/// @return a pointer just after the 2nd to last file separator in info.file
 /// @note /full/path/to/file.c -> to/file.c
-const char *_memdbg_shortFileName(const char *_file) {
+const char *_memdbg_shortFileName(const char *path) {
     static const char FILESEP =
     #ifdef _WIN32
         '\\';
@@ -375,7 +369,7 @@ const char *_memdbg_shortFileName(const char *_file) {
 
     uint8_t n = 0;
     const char *p;
-    for (p = _file + strlen(_file); p > _file; p--) {
+    for (p = path + strlen(path); p > path; p--) {
         if (*p == FILESEP) n++;
         if (n == 2) {
             p++;
@@ -387,11 +381,11 @@ const char *_memdbg_shortFileName(const char *_file) {
 }
 
 /// @brief fopen with error checking
-void _memdbg_fileOpen(memdbg_files_enum_t fid_idx, const char *mode) {
+void _memdbg_fileOpen(memdbg_file_t *file, const char *mode) {
 
     int err;
-    err = (fopen_s)(&memdbg_fid[fid_idx], FILE_PATHS[fid_idx], mode);
-    if (err != 0 || memdbg_fid[fid_idx] == NULL) {
+    err = (fopen_s)(&file->id, file->path, mode);
+    if (err != 0 || file->id == NULL) {
         char err_msg[MEMDBG_MSG_SIZE];
         sprintf_s(err_msg, MEMDBG_MSG_SIZE, "File could not be opened: %s", strerror(err));
         _memdbg_Panik(err_msg);
@@ -401,17 +395,19 @@ void _memdbg_fileOpen(memdbg_files_enum_t fid_idx, const char *mode) {
 }
 
 /// @brief fclose with error checking
-void _memdbg_fileClose(memdbg_files_enum_t fid_idx) {
+void _memdbg_fileClose(memdbg_file_t *file) {
     int err;
-    if (memdbg_fid[fid_idx] == NULL) {
+    if (file->id == NULL) {
         return;
     }
 
-    err = (fclose)(memdbg_fid[fid_idx]);
-    memdbg_fid[fid_idx] = NULL;
+    err = (fclose)(file->id);
+    file->id = NULL;
 
     if (err != 0) {
-        _memdbg_Panik("File could not be closed");
+        char err_msg[MEMDBG_MSG_SIZE];
+        sprintf_s(err_msg, sizeof(err_msg), "File could not be closed: %s", file->path);
+        _memdbg_Panik(err_msg);
     }
     
     return;
@@ -419,7 +415,6 @@ void _memdbg_fileClose(memdbg_files_enum_t fid_idx) {
 
 /// @brief outputs the timestamp in 20/11/2023 21:30:38.805999600 format
 /// @param sz should be 32.
-/// @note TODO: implement for windows (non mingW)
 uint32_t _memdbg_getTimeStamp(char *timestamp, uint32_t sz) {
     int len = 0;
     struct timespec ts;
@@ -457,7 +452,7 @@ int win32_clock_gettime(int UNUSED(unused), struct timespec *ts) {
 
 /// @brief Checks if the output from the allocation function is NULL. Logs error to memdbg_error_log.csv.
 /// @return true on error, false otherwise.
-bool _memdbg_checkAllocNull(void *alloc_result, size_t sz, const char *_file, const int _line, const char *_func, memdbg_func_enum_t func_idx) {
+bool _memdbg_checkAllocNull(void *alloc_result, size_t sz, const _memdbg_info_t info) {
     if (alloc_result != NULL) {
         return false;
     }
@@ -467,7 +462,7 @@ bool _memdbg_checkAllocNull(void *alloc_result, size_t sz, const char *_file, co
     sprintf_s(msg + len, MEMDBG_MSG_SIZE - len,
               ",%s,%d,%s,'%s',OS could not find a memory chunk of size %zu,"
               "Maybe some allocation is redundant\n",
-              _file, _line, _func, FUNC_NAME_TABLE[func_idx], sz);
+              info.file, info.line, info.func, FUNC_NAME_TABLE[info.caller_id], sz);
     _memdbg_errorLog(msg);
     (free)(msg);
 
@@ -476,7 +471,7 @@ bool _memdbg_checkAllocNull(void *alloc_result, size_t sz, const char *_file, co
 
 /// @brief Checks if an allocation of size 0 would occur. Logs error to memdbg_error_log.csv.
 /// @return true on error, false otherwise.
-bool _memdbg_checkAllocSize0(size_t sz, const char *_file, const int _line, const char *_func, memdbg_func_enum_t func_idx) {
+bool _memdbg_checkAllocSize0(size_t sz, const _memdbg_info_t info) {
     if (sz != 0) {
         return false;
     }
@@ -486,7 +481,7 @@ bool _memdbg_checkAllocSize0(size_t sz, const char *_file, const int _line, cons
     sprintf_s(msg + len, MEMDBG_MSG_SIZE - len,
               ",%s,%d,%s,'%s',Requesting memory allocation of size 0,"
               "This is never good practice but not technically an error\n",
-              _file, _line, _func, FUNC_NAME_TABLE[func_idx]);
+              info.file, info.line, info.func, FUNC_NAME_TABLE[info.caller_id]);
     _memdbg_errorLog(msg);
     (free)(msg);
 
@@ -496,7 +491,7 @@ bool _memdbg_checkAllocSize0(size_t sz, const char *_file, const int _line, cons
 /// @brief Checks if a pointer/stream that would be freed/closed was previously allocated/opened. Logs error to memdbg_error_log.csv.
 /// @return true on error, false otherwise.
 /// @note memdbg will try to circumvent this error for calls to free().
-bool _memdbg_checkNotPreviously(uint16_t n_matches, void *ptr, const char *_file, const int _line, const char *_func, memdbg_func_enum_t func_idx) {
+bool _memdbg_checkNotPreviously(uint16_t n_matches, void *ptr, const _memdbg_info_t info) {
     if (n_matches != 0) {
         return false;
     }
@@ -505,16 +500,16 @@ bool _memdbg_checkNotPreviously(uint16_t n_matches, void *ptr, const char *_file
         {"pointer", "allocat", "malloc", "allocate memory to"},
         {"filestream", "open", "fopen", "open"}
     };
-    const char **help_str = STR_TABLE[(func_idx == FCLOSE_IDX)];
+    const char **help_str = STR_TABLE[(info.caller_id == _MEMDBG_FCLOSE_ID)];
 
     char *msg = (malloc)(MEMDBG_MSG_SIZE);
     int len = _memdbg_getTimeStamp(msg, 32);
     sprintf_s(msg + len, MEMDBG_MSG_SIZE - len,
               ",%s,%d,%s,'%s',Input %s %p was not %sed by '%s' & co,"
               "Make sure to %s said %s or remove the call to '%s'\n",
-              _file, _line, _func, FUNC_NAME_TABLE[func_idx],
+              info.file, info.line, info.func, FUNC_NAME_TABLE[info.caller_id],
               help_str[0], ptr, help_str[1], help_str[2],
-              help_str[3], help_str[0], FUNC_NAME_TABLE[func_idx]);
+              help_str[3], help_str[0], FUNC_NAME_TABLE[info.caller_id]);
     _memdbg_errorLog(msg);
     (free)(msg);
 
@@ -524,20 +519,20 @@ bool _memdbg_checkNotPreviously(uint16_t n_matches, void *ptr, const char *_file
 /// @brief Checks if a pointer/stream that would be freed/closed has already been freed/closed. Logs error to memdbg_error_log.csv.
 /// @return true on error, false otherwise.
 /// @note memdbg will try to circumvent this error for calls to free().
-bool _memdbg_checkAlready(const memdbg_item_t *item, void *ptr, const char *_file, const int _line, const char *_func, memdbg_func_enum_t func_idx) {
+bool _memdbg_checkAlready(const memdbg_item_t *item, void *ptr, const _memdbg_info_t info) {
     if (!item->is_done) {
         return false;
     }
 
-    char *help_str = (func_idx == FCLOSE_IDX) ? "close" : "free";
+    char *help_str = (info.caller_id == _MEMDBG_FCLOSE_ID) ? "close" : "free";
     char *msg = (malloc)(MEMDBG_MSG_SIZE);
     int len = _memdbg_getTimeStamp(msg, 32);
     sprintf_s(msg + len, MEMDBG_MSG_SIZE - len,
               ",%s,%d,%s,'%s',%p was already %sd by '%s',"
               "Remove this call or the other at: %s; %d; %s\n",
-              _file, _line, _func, FUNC_NAME_TABLE[func_idx],
-              ptr, help_str, FUNC_NAME_TABLE[item->func_idx[1]],
-              item->_file[1], item->_line[1], item->_func[1]);
+              info.file, info.line, info.func, FUNC_NAME_TABLE[info.caller_id],
+              ptr, help_str, FUNC_NAME_TABLE[item->info[1].caller_id],
+              item->info[1].file, item->info[1].line, item->info[1].func);
     _memdbg_errorLog(msg);
     (free)(msg);
 
@@ -546,12 +541,12 @@ bool _memdbg_checkAlready(const memdbg_item_t *item, void *ptr, const char *_fil
 
 /// @brief Checks if fopen & co. failed. Logs error to memdbg_error_log.csv.
 /// @return true on error, false otherwise.
-bool _memdbg_checkFail(int res, const char *_file, const int _line, const char *_func, memdbg_func_enum_t func_idx) {
+bool _memdbg_checkFail(int res, const _memdbg_info_t info) {
     if (res == 0) {
         return false;
     }
     char help_str[2][MEMDBG_MSG_SIZE];
-    if (func_idx == FCLOSE_IDX) {
+    if (info.caller_id == _MEMDBG_FCLOSE_ID) {
         sprintf_s(help_str[0], sizeof(help_str[0]), "File could not be closed");
         sprintf_s(help_str[1], sizeof(help_str[1]), "the file is not open in another process");
     } else {
@@ -567,7 +562,7 @@ bool _memdbg_checkFail(int res, const char *_file, const int _line, const char *
     sprintf_s(msg + len, MEMDBG_MSG_SIZE - len,
               ",%s,%d,%s,'%s',%s,"
               "Make sure %s\n",
-              _file, _line, _func, FUNC_NAME_TABLE[func_idx], help_str[0], help_str[1]);
+              info.file, info.line, info.func, FUNC_NAME_TABLE[info.caller_id], help_str[0], help_str[1]);
     _memdbg_errorLog(msg);
     (free)(msg);
 
@@ -576,21 +571,21 @@ bool _memdbg_checkFail(int res, const char *_file, const int _line, const char *
 
 /// @brief checks if arg is NULL. Logs error to memdbg_error_log.csv.
 /// @return true on error, false otherwise.
-bool _memdbg_checkArgNull(uint32_t n_arg, const void *arg, const char *_file, const int _line, const char *_func, memdbg_func_enum_t func_idx) {
+bool _memdbg_checkArgNull(uint32_t n_arg, const void *arg, const _memdbg_info_t info) {
     if (arg != NULL) {
         return false;
     }
 
     static const char *STR_TABLE[3][4] = {
-        {"const char *", "const char *", "\0",           "\0"}, // FOPEN_IDX
-        {"FILE **",      "const char *", "const char *", "\0"}, // FOPEN_S_IDX
-        {"FILE *",       "\0",           "\0",           "\0"}  // FCLOSE_IDX
+        {"const char *", "const char *", "\0",           "\0"}, // _MEMDBG_FOPEN_ID
+        {"FILE **",      "const char *", "const char *", "\0"}, // _MEMDBG_FOPEN_S_ID
+        {"FILE *",       "\0",           "\0",           "\0"}  // _MEMDBG_FCLOSE_ID
     };
-    const char *arg_type = STR_TABLE[func_idx - FOPEN_IDX][n_arg];
+    const char *arg_type = STR_TABLE[info.caller_id - _MEMDBG_FOPEN_ID][n_arg];
 
     if (*arg_type == '\0') {
         char error_msg[MEMDBG_MSG_SIZE];
-        sprintf_s(error_msg, sizeof(error_msg), "%s: Function %s does not have # args!", __func__, FUNC_NAME_TABLE[func_idx], n_arg);
+        sprintf_s(error_msg, sizeof(error_msg), "%s: Function %s does not have # args!", __func__, FUNC_NAME_TABLE[info.caller_id], n_arg);
         _memdbg_Panik(error_msg);
     }
 
@@ -599,7 +594,7 @@ bool _memdbg_checkArgNull(uint32_t n_arg, const void *arg, const char *_file, co
     sprintf_s(msg + len, MEMDBG_MSG_SIZE - len,
               ",%s,%d,%s,'%s',argument #%d == (%s)NULL,"
               "Check for NULL before calling '%s'\n",
-              _file, _line, _func, FUNC_NAME_TABLE[func_idx], n_arg+1, arg_type, FUNC_NAME_TABLE[func_idx]);
+              info.file, info.line, info.func, FUNC_NAME_TABLE[info.caller_id], n_arg+1, arg_type, FUNC_NAME_TABLE[info.caller_id]);
     _memdbg_errorLog(msg);
     (free)(msg);
 
@@ -609,9 +604,9 @@ bool _memdbg_checkArgNull(uint32_t n_arg, const void *arg, const char *_file, co
 /// @brief checks for possible buffer overflows or underflows. Logs error to memdbg_error_log.csv.
 /// @return true on error, false otherwise.
 /// @note A useful thing to do with a debugger is have a breakpoint on errors in this function, and then progress in your code line by line. You'll see when an overflow occured immediately.
-bool _memdbg_checkBufferOverflow(memdbg_item_t *item, const char *_file, const int _line, const char *_func, memdbg_func_enum_t func_idx) {
+bool _memdbg_checkBufferOverflow(memdbg_item_t *item, const _memdbg_info_t info) {
 
-    if (_line == 0 || // empty item
+    if (info.line == 0 || // empty item
         item->m.is_freed ||
         !item->m.is_overallocd || // skips non-allocd items
         item->m.is_overflowd) {
@@ -636,8 +631,8 @@ bool _memdbg_checkBufferOverflow(memdbg_item_t *item, const char *_file, const i
         sprintf_s(msg + len, MEMDBG_MSG_SIZE - len,
                   ",%s,%d,%s,'%s',Buffer %sflow of %lu bytes on pointer %p,"
                   "Check uses since original alloc of %lu bytes by '%s' at: %s; %d; %s\n",
-                  _file, _line, _func, FUNC_NAME_TABLE[func_idx], help_str, i, item->m.ptr,
-                  item->m.sz, FUNC_NAME_TABLE[item->func_idx[0]], item->_file[0], item->_line[0], item->_func[0]);
+                  info.file, info.line, info.func, FUNC_NAME_TABLE[info.caller_id], help_str, i, item->m.ptr,
+                  item->m.sz, FUNC_NAME_TABLE[item->info[0].caller_id], item->info[0].file, item->info[0].line, item->info[0].func);
         _memdbg_errorLog(msg);
         (free)(msg);
 
@@ -650,7 +645,8 @@ bool _memdbg_checkBufferOverflow(memdbg_item_t *item, const char *_file, const i
 
 /// @brief Runs _memdbg_checkBufferOverflow to detect these errors as they occur
 memdbg_thread_return_t _memdbg_threadFunc(memdbg_thread_arg_t UNUSED(unused)) {
-    const char *_file = _memdbg_shortFileName(__FILE__);
+    const _memdbg_info_t info = _MEMDBG_INFO_INITIALIZER(_MEMDBG_INTERNAL_ID);
+    
     uint32_t idx, i_bucket, i_item;
     memdbg_bucket_t *bucket;
     memdbg_item_t *item;
@@ -665,7 +661,7 @@ memdbg_thread_return_t _memdbg_threadFunc(memdbg_thread_arg_t UNUSED(unused)) {
                 if (bucket->n_items == 0) continue;
                 for (i_item = 0; i_item < bucket->n_items; i_item++) {
                     item = &bucket->items[i_item];
-                    _memdbg_checkBufferOverflow(item, _file, __LINE__, __func__, INTERNAL_IDX);
+                    _memdbg_checkBufferOverflow(item, info);
                 }
             }
             
@@ -679,8 +675,8 @@ memdbg_thread_return_t _memdbg_threadFunc(memdbg_thread_arg_t UNUSED(unused)) {
 /// @brief Runs on cleanup, checks if a pointer/stream was freed/closed before runtime ended. Logs error to memdbg_error_log.csv.
 /// @return true on error, false otherwise.
 /// @note memdbg will try to circumvent this error for calls to free().
-bool _memdbg_checkNotDone(const memdbg_item_t *item, const char *_file, const int _line, const char *_func, memdbg_func_enum_t func_idx) {
-    if (item->is_done || item->_line[0] == 0) {
+bool _memdbg_checkNotDone(const memdbg_item_t *item, const _memdbg_info_t info) {
+    if (item->is_done || item->info[0].line == 0) {
         return false;
     }
 
@@ -688,16 +684,16 @@ bool _memdbg_checkNotDone(const memdbg_item_t *item, const char *_file, const in
         {"close", "open"},
         {"free", "allocat"},
     };
-    const char **help_str = STR_TABLE[(item->func_idx[0] < FOPEN_IDX)];
+    const char **help_str = STR_TABLE[(item->info[0].caller_id < _MEMDBG_FOPEN_ID)];
 
     char *msg = (malloc)(MEMDBG_MSG_SIZE);
     int len = _memdbg_getTimeStamp(msg, 32);
     sprintf_s(msg + len, MEMDBG_MSG_SIZE - len,
               ",%s,%d,%s,'%s',%p was not %sd properly,"
               "Make sure it is %sd after use (Originally %sed by '%s' at: %s; %d; %s)\n",
-              _file, _line, _func, FUNC_NAME_TABLE[func_idx],
+              info.file, info.line, info.func, FUNC_NAME_TABLE[info.caller_id],
               item->key, help_str[0],
-              help_str[0], help_str[1], FUNC_NAME_TABLE[item->func_idx[0]], item->_file[0], item->_line[0], item->_func[0]);
+              help_str[0], help_str[1], FUNC_NAME_TABLE[item->info[0].caller_id], item->info[0].file, item->info[0].line, item->info[0].func);
     _memdbg_errorLog(msg);
     (free)(msg);
 
@@ -712,15 +708,12 @@ uint32_t _memdbg_hashFunc(uintptr_t key) {
 }
 
 /// @brief Creates the first half of an item, for 'malloc' and 'fopen' etc.
-memdbg_item_t _memdbg_itemInit(uintptr_t key, uintptr_t extra[2], bool is_overallocd, const char *_file, const int _line, const char *_func, memdbg_func_enum_t func_idx) {
-    memdbg_item_t item = {0};
-
-    item.func_idx[0] = func_idx;
-    item._file[0] = _file;
-    item._func[0] = _func;
-    item.extra[0] = extra[0];
-    item.extra[1] = extra[1];
-    item._line[0] = _line;
+memdbg_item_t _memdbg_itemInit(uintptr_t key, uintptr_t extra[2], bool is_overallocd, const _memdbg_info_t info) {
+    memdbg_item_t item = {
+        .info[0] = info,
+        .extra[0] = extra[0],
+        .extra[1] = extra[1],
+    };
 
     if (is_overallocd) {  // Correction for negative padding
         memset((char *)key, MEMDBG_OVERALLOC_FILL_VALUE, MEMDBG_OVERALLOC_AMOUNT_BYTES);
@@ -734,7 +727,7 @@ memdbg_item_t _memdbg_itemInit(uintptr_t key, uintptr_t extra[2], bool is_overal
 }
 
 /// @brief Fills the missing fields of an item (excluding the extras), for 'free' and 'fclose' etc.
-void _memdbg_itemFill(memdbg_item_t *item, uintptr_t key, const char *_file, const int _line, const char *_func, memdbg_func_enum_t func_idx) {
+void _memdbg_itemFill(memdbg_item_t *item, uintptr_t key, const _memdbg_info_t info) {
     
     if (item->is_done) return;
 
@@ -744,10 +737,7 @@ void _memdbg_itemFill(memdbg_item_t *item, uintptr_t key, const char *_file, con
         _memdbg_Panik("Inconsistent _memdbg_itemInit and _memdbg_itemFill key values!");
     }
 
-    item->func_idx[1] = func_idx;
-    item->_file[1] = _file;
-    item->_func[1] = _func;
-    item->_line[1] = _line;
+    item->info[1] = info;
     item->is_done = true;
     
     return;
@@ -831,9 +821,8 @@ void _memdbg_itemInsert(const memdbg_item_t item) {
     if (bucket->n_items >= bucket->n_items_allocd) {
         uint16_t new_sz = (bucket->n_items_allocd * 3) / 2;
         bucket->items = (realloc)(bucket->items, new_sz * sizeof(memdbg_item_t));
-        memdbg_item_t empty_item = {0};
         for (uint16_t i_item = bucket->n_items_allocd; i_item < new_sz; i_item++) {
-            bucket->items[i_item] = empty_item;
+            bucket->items[i_item] = (memdbg_item_t){0};
         }
         bucket->n_items_allocd = new_sz;
     }
@@ -862,17 +851,17 @@ void _memdbg_errorLog(const char *msg) {
         _memdbg_Panik("Comma count in error message must fit the number of columns in the .csv file");
     }
 
-    while (memdbg_fid[ERROR_FILE] == NULL) {
+    while (memdbg_files.error.id == NULL) {
         MEMDBG_SLEEP(1000); // MEMDBG_OPTIONS_MULTIPLE_ERRORS is off and another thread is gonna panik
     }
 
-    if (fputs(msg, memdbg_fid[ERROR_FILE])) {
+    if (fputs(msg, memdbg_files.error.id)) {
         _memdbg_Panik("Could not write to error log!");
     }
 
     if (!memdbg_optionCheck(MEMDBG_OPTIONS_MULTIPLE_ERRORS)) {
-        _memdbg_fileClose(ERROR_FILE);
-        _memdbg_fileClose(REPORT_FILE);
+        _memdbg_fileClose(&memdbg_files.error);
+        _memdbg_fileClose(&memdbg_files.error);
         _memdbg_Panik("Exit on error found - check log file");
     }
 
@@ -886,7 +875,7 @@ void _memdbg_itemLog(const memdbg_item_t item) {
         return;
     }
     
-    if (item._line[0] <= 0 && item._line[1] <= 0) {
+    if (item.info[0].line <= 0 && item.info[1].line <= 0) {
         _memdbg_Panik("Attempt to log an empty item");
     }
 
@@ -898,55 +887,55 @@ void _memdbg_itemLog(const memdbg_item_t item) {
     len += sprintf_s(msg + len, msg_sz - len,
                      "%s,%s,%d,%s,",
                      timestamp,
-                     item._file[item.is_done],
-                     item._line[item.is_done],
-                     item._func[item.is_done]);
+                     item.info[item.is_done].file,
+                     item.info[item.is_done].line,
+                     item.info[item.is_done].func);
 
-    memdbg_func_enum_t func_idx = item.func_idx[item.is_done];
+    _memdbg_func_enum_t caller_id = item.info[item.is_done].caller_id;
     
     if (item.is_done) {
-        if (func_idx == REALLOC_IDX) {
+        if (caller_id == _MEMDBG_REALLOC_ID) {
             if (item.key == (uintptr_t)item.m.next) {
                 len += sprintf_s(msg + len, msg_sz - len,
                          "Address %p resized in place to %lu bytes '%s'.\n",
                          item.m.ptr,
                          item.m.sz,
-                         FUNC_NAME_TABLE[func_idx]);
+                         FUNC_NAME_TABLE[caller_id]);
             } else {
                 len += sprintf_s(msg + len, msg_sz - len,
                          "Address %p moved to %p and resized to %lu bytes by '%s'.\n",
                          item.m.ptr,
                          item.m.next,
                          item.m.sz,
-                         FUNC_NAME_TABLE[func_idx]);
+                         FUNC_NAME_TABLE[caller_id]);
             }
-        } else if (item.func_idx[0] <= REALLOC_IDX) {  // free
+        } else if (item.info[0].caller_id <= _MEMDBG_REALLOC_ID) {  // free
             len += sprintf_s(msg + len, msg_sz - len,
                          "Address %p freed by '%s'.\n",
                          item.m.ptr,
-                         FUNC_NAME_TABLE[func_idx]);
-        } else if (func_idx >= FCLOSE_IDX) {  // close
+                         FUNC_NAME_TABLE[caller_id]);
+        } else if (caller_id >= _MEMDBG_FCLOSE_ID) {  // close
             len += sprintf_s(msg + len, msg_sz - len,
                          "Stream %p closed by '%s' ending permission(s) '%s' for file %s.\n",
                          item.f.stream,
-                         FUNC_NAME_TABLE[func_idx],
+                         FUNC_NAME_TABLE[caller_id],
                          item.f.mode,
                          item.f.path);
         } else {
         _memdbg_Panik("Attempting to log an unknown item type!");
         }
     } else {
-        if (func_idx <= REALLOC_IDX) {  // malloc & co.
+        if (caller_id <= _MEMDBG_REALLOC_ID) {  // malloc & co.
             len += sprintf_s(msg + len, msg_sz - len,
                              "Address %p allocated %lu bytes by '%s'.\n",
                              item.m.ptr,
                              item.m.sz,
-                             FUNC_NAME_TABLE[func_idx]);
-        } else if (func_idx <= FOPEN_S_IDX) {  // fopen & co.
+                             FUNC_NAME_TABLE[caller_id]);
+        } else if (caller_id <= _MEMDBG_FOPEN_S_ID) {  // fopen & co.
             len += sprintf_s(msg + len, msg_sz - len,
                              "Stream %p opened by '%s' with permission(s) '%s' for file %s.\n",
                              item.f.stream,
-                             FUNC_NAME_TABLE[func_idx],
+                             FUNC_NAME_TABLE[caller_id],
                              item.f.mode,
                              item.f.path);
         } else {
@@ -954,11 +943,11 @@ void _memdbg_itemLog(const memdbg_item_t item) {
         }
     }
 
-    if (memdbg_fid[REPORT_FILE] == NULL) {
+    if (memdbg_files.report.id == NULL) {
         return;
     }
 
-    if (fputs(msg, memdbg_fid[REPORT_FILE])) {
+    if (fputs(msg, memdbg_files.report.id)) {
         _memdbg_Panik("Could not write to item log!");
     }
     
@@ -970,8 +959,8 @@ void _memdbg_itemLog(const memdbg_item_t item) {
 /// @brief Is performed at exit, frees all memory that you forgot to free, as well as all internal memory (hash-map related)
 void _memdbg_Cleanup(void) {
     uint32_t idx, i_bucket, i_item;
-    int _line;
-    const char *_file = _memdbg_shortFileName(__FILE__);
+    _memdbg_info_t info = _MEMDBG_INFO_INITIALIZER(_MEMDBG_INTERNAL_ID);
+
     memdbg_bucket_t *bucket;
     memdbg_item_t *item;
 
@@ -986,16 +975,16 @@ void _memdbg_Cleanup(void) {
 
             for (i_item = 0; i_item < bucket->n_items_allocd; i_item++) {
                 item = &bucket->items[i_item];
-                if (!_memdbg_checkNotDone(item, _file, __LINE__, __func__, INTERNAL_IDX)) continue;
+                if (!_memdbg_checkNotDone(item, info)) continue;
 
-                if (item->func_idx[0] <= REALLOC_IDX) {
+                if (item->info[0].caller_id <= _MEMDBG_REALLOC_ID) {
                     char *free_arg = (char *)item->m.ptr - (item->m.is_overallocd * MEMDBG_OVERALLOC_AMOUNT_BYTES); // free what was originally allocd
-                    (free)(free_arg); _line = __LINE__;
-                    _memdbg_itemFill(item, INT_NULL, _file, _line, __func__, INTERNAL_IDX);
+                    (free)(free_arg); info.line = __LINE__;
+                    _memdbg_itemFill(item, INT_NULL, info);
                     item->m.next = NULL;
                 } else {
-                    item->f.is_closed = ((fclose)((FILE *)item->f.stream) == 0); _line = __LINE__;
-                    _memdbg_itemFill(item, INT_NULL, _file, _line, __func__, INTERNAL_IDX);
+                    item->f.is_closed = ((fclose)((FILE *)item->f.stream) == 0); info.line = __LINE__;
+                    _memdbg_itemFill(item, INT_NULL, info);
                 }
                 _memdbg_itemLog(*item);
             }
@@ -1004,8 +993,8 @@ void _memdbg_Cleanup(void) {
         (free)(memdbg_map[idx].buckets);
     }
 
-    _memdbg_fileClose(ERROR_FILE);
-    _memdbg_fileClose(REPORT_FILE);
+    _memdbg_fileClose(&memdbg_files.error);
+    _memdbg_fileClose(&memdbg_files.report);
 
     return;
 }

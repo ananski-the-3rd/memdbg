@@ -99,16 +99,25 @@
 #define MEMDBG_MAPTEX_LOCK(idx) MEMDBG_MUTEX_LOCK(memdbg_maptex[(idx) % (MEMDBG_MAPTEX_SIZE)])
 #define MEMDBG_MAPTEX_UNLOCK(idx) MEMDBG_MUTEX_UNLOCK(memdbg_maptex[(idx) % (MEMDBG_MAPTEX_SIZE)])
 
+//----------------MISCELLANEOUS TYPEDEFS----------------//
+
+typedef struct memdbg_file_t {
+        const char *path;
+        FILE *id;
+} memdbg_file_t;
+
+typedef struct memdbg_files_t {
+    memdbg_file_t error;
+    memdbg_file_t report;
+} memdbg_files_t;
+
 //----------------HASH-MAP TYPEDEFS----------------//
 
-typedef enum memdbg_func_enum_t {MALLOC_IDX, CALLOC_IDX, REALLOC_IDX, FREE_IDX, FOPEN_IDX, FOPEN_S_IDX, FCLOSE_IDX, INTERNAL_IDX, N_FUNC_TYPES} memdbg_func_enum_t;
+
 
 // item.key === (uintptr_t)item.m.ptr === (uintptr_t)item.f.stream
 typedef struct memdbg_item_t {
-    memdbg_func_enum_t func_idx[2];
-    const char *_file[2];  // __FILE__
-    int _line[2];          // __LINE__
-    const char *_func[2];  // __func__
+    _memdbg_info_t info[2];
 
     union {
         struct {                // Memory Stuff
@@ -122,7 +131,7 @@ typedef struct memdbg_item_t {
             uint8_t is_overflowd;
         } m;
 
-        struct memdbg_files_t { // File Stuff
+        struct {                // File Stuff
             FILE *stream;       // hash key
 
             const char *path;   // file path for fopen
@@ -165,33 +174,29 @@ typedef struct memdbg_map_t{
 // This structure uses a combination of chaining and linear probing. An item will always be found at index = hash(item.key). 
 // Efficiency compared to other structures is yet to be tested.
 
-//----------------MISCELLANEOUS TYPEDEFS----------------//
-
-typedef enum memdbg_files_enum_t {ERROR_FILE, REPORT_FILE, N_OUTPUT_FILES} memdbg_files_enum_t;
-
 //----------------PRIVATE UTILS----------------//
 
-void _memdbg_fileOpen(memdbg_files_enum_t fid_idx, const char *mode);
-void _memdbg_fileClose(memdbg_files_enum_t fid_idx);
+void _memdbg_fileOpen(memdbg_file_t *file, const char *mode);
+void _memdbg_fileClose(memdbg_file_t *file);
 uint32_t _memdbg_getTimeStamp(char *timestamp, uint32_t sz);
 
 //----------------CHECKING FOR THESE ERRORS----------------//
 
-bool _memdbg_checkAllocNull(void *alloc_result, size_t sz, const char *_file, const int _line, const char *_func, memdbg_func_enum_t func_idx);
-bool _memdbg_checkAllocSize0(size_t sz, const char *_file, const int _line, const char *_func, memdbg_func_enum_t func_idx);
-bool _memdbg_checkNotPreviously(uint16_t n_matches, void *ptr, const char *_file, const int _line, const char *_func, memdbg_func_enum_t func_idx);
-bool _memdbg_checkAlready(const memdbg_item_t *item, void *ptr, const char *_file, const int _line, const char *_func, memdbg_func_enum_t func_idx);
-bool _memdbg_checkFail(int res, const char *_file, const int _line, const char *_func, memdbg_func_enum_t func_idx);
-bool _memdbg_checkArgNull(uint32_t n_arg, const void *stream, const char *_file, const int _line, const char *_func, memdbg_func_enum_t func_idx);
-bool _memdbg_checkBufferOverflow(memdbg_item_t *item, const char *_file, const int _line, const char *_func, memdbg_func_enum_t func_idx);
+bool _memdbg_checkAllocNull(void *alloc_result, size_t sz, const _memdbg_info_t info);
+bool _memdbg_checkAllocSize0(size_t sz, const _memdbg_info_t info);
+bool _memdbg_checkNotPreviously(uint16_t n_matches, void *ptr, const _memdbg_info_t info);
+bool _memdbg_checkAlready(const memdbg_item_t *item, void *ptr, const _memdbg_info_t info);
+bool _memdbg_checkFail(int res, const _memdbg_info_t info);
+bool _memdbg_checkArgNull(uint32_t n_arg, const void *stream, const _memdbg_info_t info);
+bool _memdbg_checkBufferOverflow(memdbg_item_t *item, const _memdbg_info_t info);
 memdbg_thread_return_t _memdbg_threadFunc(memdbg_thread_arg_t UNUSED(unused));
-bool _memdbg_checkNotDone(const memdbg_item_t *item, const char *_file, const int _line, const char *_func, memdbg_func_enum_t func_idx);
+bool _memdbg_checkNotDone(const memdbg_item_t *item, const _memdbg_info_t info);
 
 //----------------HASH-MAP IMPLEMENTATION----------------//
 
 uint32_t _memdbg_hashFunc(uintptr_t key);
-memdbg_item_t _memdbg_itemInit(uintptr_t key, uintptr_t extra[2], bool is_overallocd, const char *_file, const int _line, const char *_func, memdbg_func_enum_t func_idx);
-void _memdbg_itemFill(memdbg_item_t *item, uintptr_t key, const char *_file, const int _line, const char *_func, memdbg_func_enum_t func_idx);
+memdbg_item_t _memdbg_itemInit(uintptr_t key, uintptr_t extra[2], bool is_overallocd, const _memdbg_info_t info);
+void _memdbg_itemFill(memdbg_item_t *item, uintptr_t key, const _memdbg_info_t info);
 memdbg_bucket_t *_memdbg_bucketCreate(uint32_t idx);
 memdbg_bucket_t *_memdbg_itemLookup(uintptr_t key);
 void _memdbg_itemInsert(const memdbg_item_t item);

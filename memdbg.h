@@ -68,23 +68,44 @@ memdbg_mode_t memdbg_optionToggle(memdbg_mode_t option_code);
 #endif
 
 //----------------MEMORY FUNCTION OVERRIDES----------------//
-// Functions that start with '_' should not be called directly from outside memdbg
+// things that start with '_' should not be called directly from outside memdbg
+
+
+typedef enum _memdbg_func_enum_t {
+    _MEMDBG_MALLOC_ID, _MEMDBG_CALLOC_ID, _MEMDBG_REALLOC_ID, _MEMDBG_FREE_ID,
+    _MEMDBG_FOPEN_ID, _MEMDBG_FOPEN_S_ID, _MEMDBG_FCLOSE_ID, _MEMDBG_INTERNAL_ID, _MEMDBG_N_FUNC_TYPES
+} _memdbg_func_enum_t;
+
+typedef struct _memdbg_info_t {
+    char *file;   // __FILE__
+    char *func;   // __func__
+    int line;     // __LINE__
+    _memdbg_func_enum_t caller_id;
+} _memdbg_info_t;
+
+#define _MEMDBG_INFO_INITIALIZER(id)                     \
+    (const _memdbg_info_t) {                             \
+        .file = (char *)_memdbg_shortFileName(__FILE__), \
+        .line = __LINE__,                                \
+        .func = (char *)__func__,                        \
+        .caller_id = id                                  \
+    }
 
 const char *_memdbg_shortFileName(const char *_file);
-#define malloc(sz) _memdbg_malloc(sz, _memdbg_shortFileName(__FILE__), __LINE__, __func__)
-#define calloc(n, sz) _memdbg_calloc((n) * (sz), _memdbg_shortFileName(__FILE__), __LINE__, __func__)
-#define realloc(p, sz) _memdbg_realloc(p, sz, _memdbg_shortFileName(__FILE__), __LINE__, __func__)
-#define free(p) _memdbg_free(p, _memdbg_shortFileName(__FILE__), __LINE__, __func__)
-#define fopen(fn, m) _memdbg_fopen(fn, m, _memdbg_shortFileName(__FILE__), __LINE__, __func__)
-#define fopen_s(fid, fn, m) _memdbg_fopen_s(fid, fn, m, _memdbg_shortFileName(__FILE__), __LINE__, __func__)
-#define fclose(p) _memdbg_fclose(p, _memdbg_shortFileName(__FILE__), __LINE__, __func__)
+#define malloc(sz) _memdbg_malloc(sz, _MEMDBG_INFO_INITIALIZER(_MEMDBG_MALLOC_ID))
+#define calloc(n, sz) _memdbg_calloc((n) * (sz), _MEMDBG_INFO_INITIALIZER(_MEMDBG_CALLOC_ID))
+#define realloc(p, sz) _memdbg_realloc(p, sz, _MEMDBG_INFO_INITIALIZER(_MEMDBG_REALLOC_ID))
+#define free(p) _memdbg_free(p, _MEMDBG_INFO_INITIALIZER(_MEMDBG_FREE_ID))
+#define fopen(fn, m) _memdbg_fopen(fn, m, _MEMDBG_INFO_INITIALIZER(_MEMDBG_FOPEN_ID))
+#define fopen_s(fid, fn, m) _memdbg_fopen_s(fid, fn, m, _MEMDBG_INFO_INITIALIZER(_MEMDBG_FOPEN_S_ID))
+#define fclose(p) _memdbg_fclose(p, _MEMDBG_INFO_INITIALIZER(_MEMDBG_FCLOSE_ID))
 
-void *_memdbg_malloc(size_t sz, const char *_file, const int _line, const char *_func);
-void *_memdbg_calloc(size_t sz, const char *_file, const int _line, const char *_func);
-void *_memdbg_realloc(void *ptr, size_t sz, const char *_file, const int _line, const char *_func);
-void _memdbg_free(void *ptr, const char *_file, const int _line, const char *_func);
-FILE *_memdbg_fopen(const char *path, const char *mode, const char *_file, const int _line, const char *_func);
-errno_t _memdbg_fopen_s(FILE **stream, const char *path, const char *mode, const char *_file, const int _line, const char *_func);
-int _memdbg_fclose(FILE *stream, const char *_file, const int _line, const char *_func);
+void *_memdbg_malloc(size_t sz, const _memdbg_info_t info);
+void *_memdbg_calloc(size_t sz, const _memdbg_info_t info);
+void *_memdbg_realloc(void *ptr, size_t sz, const _memdbg_info_t info);
+void _memdbg_free(void *ptr, const _memdbg_info_t info);
+FILE *_memdbg_fopen(const char *path, const char *mode, const _memdbg_info_t info);
+errno_t _memdbg_fopen_s(FILE **stream, const char *path, const char *mode, const _memdbg_info_t info);
+int _memdbg_fclose(FILE *stream, const _memdbg_info_t info);
 
 #endif
