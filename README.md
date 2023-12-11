@@ -36,6 +36,10 @@ After the runtime ends, run `Import-Csv ./memdbg_error_log.csv |Out-GridView` in
 On unix-like systems: `column -s, -t < data.csv`
 
 ## Changelog
+Version 1.1
+- Simplified much of the code by condensing `__FILE__`,  `__LINE__`, `__func__` and the overridden function's id into a struct.
+- Added cmake support
+
 Version 1.0
 - Improved performance in many ways
 - Passed the integration test for threads
