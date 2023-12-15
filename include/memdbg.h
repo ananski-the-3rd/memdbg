@@ -16,19 +16,21 @@
 #ifdef MEMDBG_ENABLED
 #include <stdio.h> // contains size_t and FILE types, as well as fopen & co.
 #include <stdlib.h> // contains malloc & co.
+#include <stdbool.h>
+#include "memdbg_export.h"
 
 //----------------PUBLIC UTILS----------------//
 // These tools can help you play with the memdbg mode at runtime
 
-typedef unsigned int memdbg_mode_t;
+MEMDBG_EXPORT typedef unsigned int memdbg_mode_t;
 
-void memdbg_Init(memdbg_mode_t mode);
-memdbg_mode_t memdbg_modeGet(void);
-memdbg_mode_t memdbg_modeSet(memdbg_mode_t new_mode);
-bool memdbg_optionCheck(memdbg_mode_t option_code);
-memdbg_mode_t memdbg_optionOn(memdbg_mode_t option_code);
-memdbg_mode_t memdbg_optionOff(memdbg_mode_t option_code);
-memdbg_mode_t memdbg_optionToggle(memdbg_mode_t option_code);
+MEMDBG_EXPORT void memdbg_Init(memdbg_mode_t mode);
+MEMDBG_EXPORT memdbg_mode_t memdbg_modeGet(void);
+MEMDBG_EXPORT memdbg_mode_t memdbg_modeSet(memdbg_mode_t new_mode);
+MEMDBG_EXPORT bool memdbg_optionCheck(memdbg_mode_t option_code);
+MEMDBG_EXPORT memdbg_mode_t memdbg_optionOn(memdbg_mode_t option_code);
+MEMDBG_EXPORT memdbg_mode_t memdbg_optionOff(memdbg_mode_t option_code);
+MEMDBG_EXPORT memdbg_mode_t memdbg_optionToggle(memdbg_mode_t option_code);
 
 //----------------MEMDBG OPTIONS----------------//
 
@@ -91,7 +93,7 @@ typedef struct _memdbg_info_t {
         .caller_id = id                                  \
     }
 
-const char *_memdbg_shortFileName(const char *_file);
+MEMDBG_EXPORT const char *_memdbg_shortFileName(const char *_file);
 #define malloc(sz) _memdbg_malloc(sz, _MEMDBG_INFO_INITIALIZER(_MEMDBG_MALLOC_ID))
 #define calloc(n, sz) _memdbg_calloc((n) * (sz), _MEMDBG_INFO_INITIALIZER(_MEMDBG_CALLOC_ID))
 #define realloc(p, sz) _memdbg_realloc(p, sz, _MEMDBG_INFO_INITIALIZER(_MEMDBG_REALLOC_ID))
@@ -100,12 +102,12 @@ const char *_memdbg_shortFileName(const char *_file);
 #define fopen_s(fid, fn, m) _memdbg_fopen_s(fid, fn, m, _MEMDBG_INFO_INITIALIZER(_MEMDBG_FOPEN_S_ID))
 #define fclose(p) _memdbg_fclose(p, _MEMDBG_INFO_INITIALIZER(_MEMDBG_FCLOSE_ID))
 
-void *_memdbg_malloc(size_t sz, const _memdbg_info_t info);
-void *_memdbg_calloc(size_t sz, const _memdbg_info_t info);
-void *_memdbg_realloc(void *ptr, size_t sz, const _memdbg_info_t info);
-void _memdbg_free(void *ptr, const _memdbg_info_t info);
-FILE *_memdbg_fopen(const char *path, const char *mode, const _memdbg_info_t info);
-errno_t _memdbg_fopen_s(FILE **stream, const char *path, const char *mode, const _memdbg_info_t info);
-int _memdbg_fclose(FILE *stream, const _memdbg_info_t info);
+MEMDBG_EXPORT void *_memdbg_malloc(size_t sz, const _memdbg_info_t info);
+MEMDBG_EXPORT void *_memdbg_calloc(size_t sz, const _memdbg_info_t info);
+MEMDBG_EXPORT void *_memdbg_realloc(void *ptr, size_t sz, const _memdbg_info_t info);
+MEMDBG_EXPORT void _memdbg_free(void *ptr, const _memdbg_info_t info);
+MEMDBG_EXPORT FILE *_memdbg_fopen(const char *path, const char *mode, const _memdbg_info_t info);
+MEMDBG_EXPORT errno_t _memdbg_fopen_s(FILE **stream, const char *path, const char *mode, const _memdbg_info_t info);
+MEMDBG_EXPORT int _memdbg_fclose(FILE *stream, const _memdbg_info_t info);
 
 #endif

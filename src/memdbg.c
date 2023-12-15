@@ -20,7 +20,7 @@ static memdbg_mutex_t memdbg_mode_mutex;
 
 //----------------MEMORY FUNCTION OVERRIDES----------------//
 
-void *_memdbg_malloc(size_t sz, const _memdbg_info_t info) {
+MEMDBG_EXPORT void *_memdbg_malloc(size_t sz, const _memdbg_info_t info) {
     memdbg_Init(MEMDBG_DEFAULT_MODE); // only done once
     
     _memdbg_checkAllocSize0(sz, info);
@@ -41,7 +41,7 @@ void *_memdbg_malloc(size_t sz, const _memdbg_info_t info) {
     return (void *)item.m.ptr;
 }
 
-void *_memdbg_calloc(size_t sz, const _memdbg_info_t info) {
+MEMDBG_EXPORT void *_memdbg_calloc(size_t sz, const _memdbg_info_t info) {
     memdbg_Init(MEMDBG_DEFAULT_MODE); // only done once
 
     _memdbg_checkAllocSize0(sz, info);
@@ -62,7 +62,7 @@ void *_memdbg_calloc(size_t sz, const _memdbg_info_t info) {
     return (void *)item.m.ptr;
 }
 
-void *_memdbg_realloc(void *ptr, size_t sz, const _memdbg_info_t info) {
+MEMDBG_EXPORT void *_memdbg_realloc(void *ptr, size_t sz, const _memdbg_info_t info) {
     memdbg_Init(MEMDBG_DEFAULT_MODE); // only done once
 
     // realloc is basically 'free()' + 'malloc()'. free_item should be the 2nd half of an existing item, and alloc_item the 1st half of a new item
@@ -118,7 +118,7 @@ void *_memdbg_realloc(void *ptr, size_t sz, const _memdbg_info_t info) {
     return (void *)alloc_item.m.ptr;
 }
 
-void _memdbg_free(void *ptr, const _memdbg_info_t info) {
+MEMDBG_EXPORT void _memdbg_free(void *ptr, const _memdbg_info_t info) {
     memdbg_Init(MEMDBG_DEFAULT_MODE); // only done once
 
     memdbg_item_t empty_item = {0};
@@ -154,7 +154,7 @@ void _memdbg_free(void *ptr, const _memdbg_info_t info) {
     return;
 }
 
-FILE *_memdbg_fopen(const char *path, const char *mode, const _memdbg_info_t info) {
+MEMDBG_EXPORT FILE *_memdbg_fopen(const char *path, const char *mode, const _memdbg_info_t info) {
     memdbg_Init(MEMDBG_DEFAULT_MODE); // only done once
 
     if (_memdbg_checkArgNull(0, path, info) ||
@@ -178,7 +178,7 @@ FILE *_memdbg_fopen(const char *path, const char *mode, const _memdbg_info_t inf
     return fid;
 }
 
-errno_t _memdbg_fopen_s(FILE **stream, const char *path, const char *mode, const _memdbg_info_t info) {
+MEMDBG_EXPORT errno_t _memdbg_fopen_s(FILE **stream, const char *path, const char *mode, const _memdbg_info_t info) {
     memdbg_Init(MEMDBG_DEFAULT_MODE); // only done once
 
     if (_memdbg_checkArgNull(0, stream, info)  ||
@@ -202,7 +202,7 @@ errno_t _memdbg_fopen_s(FILE **stream, const char *path, const char *mode, const
     return err;
 }
 
-int _memdbg_fclose(FILE *stream, const _memdbg_info_t info) {
+MEMDBG_EXPORT int _memdbg_fclose(FILE *stream, const _memdbg_info_t info) {
     memdbg_Init(MEMDBG_DEFAULT_MODE); // only done once
 
     int res;
@@ -249,7 +249,7 @@ int _memdbg_fclose(FILE *stream, const _memdbg_info_t info) {
 /// @note MEMDBG_OPTIONS_OVERALLOC - memdbg will over-allocate all allocations. This is required for finding potential buffer overflows. May be memory intensive.
 /// @note MEMDBG_OPTIONS_PRINT_ALL - memdbg will report *every call* to the memory functions in a separate log. Errors will be reported as usual in an error log. Recommended for smaller projects.
 /// @note MEMDBG_OPTIONS_THREADS - memdbg will be thread safe.
-void memdbg_Init(memdbg_mode_t mode) {
+MEMDBG_EXPORT void memdbg_Init(memdbg_mode_t mode) {
     static volatile bool memdbg_init_is_done = false;
     if (memdbg_init_is_done) return;
 
@@ -289,14 +289,14 @@ void memdbg_Init(memdbg_mode_t mode) {
 }
 
 /// @brief returns the current memdbg mode code
-memdbg_mode_t memdbg_modeGet(void) {
+MEMDBG_EXPORT memdbg_mode_t memdbg_modeGet(void) {
     return (memdbg_mode);
 }
 
 /// @brief Sets memdbg mode to new_mode and handles option callbacks
 /// @param new_mode the new memdbg mode code
 /// @return new_mode
-memdbg_mode_t memdbg_modeSet(memdbg_mode_t new_mode) {
+MEMDBG_EXPORT memdbg_mode_t memdbg_modeSet(memdbg_mode_t new_mode) {
     static memdbg_thread_t memdbg_check_buffers;
     
     bool use_mutex = new_mode & MEMDBG_OPTIONS_THREADS;
@@ -325,7 +325,7 @@ memdbg_mode_t memdbg_modeSet(memdbg_mode_t new_mode) {
 }
 
 /// @brief true if the option is on, false if off.
-bool memdbg_optionCheck(memdbg_mode_t option_code) {
+MEMDBG_EXPORT bool memdbg_optionCheck(memdbg_mode_t option_code) {
     return (memdbg_mode & option_code);
 }
 
@@ -333,7 +333,7 @@ bool memdbg_optionCheck(memdbg_mode_t option_code) {
 /// @param option_code a memdbg macro specifiyng an option
 /// @return the new memdbg mode code, with the option activated
 /// @note if the option is already activated - nothing changes.
-memdbg_mode_t memdbg_optionOn(memdbg_mode_t option_code) {
+MEMDBG_EXPORT memdbg_mode_t memdbg_optionOn(memdbg_mode_t option_code) {
     return memdbg_modeSet(memdbg_mode | option_code);
 }
 
@@ -341,7 +341,7 @@ memdbg_mode_t memdbg_optionOn(memdbg_mode_t option_code) {
 /// @param option_code a memdbg macro specifiyng an option
 /// @return the new memdbg mode code, with the option deactivated
 /// @note if the option is already deactivated - nothing changes.
-memdbg_mode_t memdbg_optionOff(memdbg_mode_t option_code) {
+MEMDBG_EXPORT memdbg_mode_t memdbg_optionOff(memdbg_mode_t option_code) {
     return memdbg_modeSet(memdbg_mode & ~option_code);
 }
 
@@ -349,17 +349,15 @@ memdbg_mode_t memdbg_optionOff(memdbg_mode_t option_code) {
 /// @param option_code a memdbg macro specifiyng an option
 /// @return the new memdbg mode code, with the option toggled
 /// @note if the option is activated - deactivates it (and vice versa).
-memdbg_mode_t memdbg_optionToggle(memdbg_mode_t option_code) {
+MEMDBG_EXPORT memdbg_mode_t memdbg_optionToggle(memdbg_mode_t option_code) {
     return memdbg_modeSet(memdbg_mode ^ option_code);
 }
-
-//----------------PRIVATE UTILS----------------//
 
 /// @brief turns an absolute path to a short path indicating the file name and the parent dir
 /// @param info.file __FILE__ macro from the original call
 /// @return a pointer just after the 2nd to last file separator in info.file
 /// @note /full/path/to/file.c -> to/file.c
-const char *_memdbg_shortFileName(const char *path) {
+MEMDBG_EXPORT const char *_memdbg_shortFileName(const char *path) {
     static const char FILESEP =
     #ifdef _WIN32
         '\\';
@@ -379,6 +377,9 @@ const char *_memdbg_shortFileName(const char *path) {
 
     return p;
 }
+
+
+//----------------PRIVATE UTILS----------------//
 
 /// @brief fopen with error checking
 void _memdbg_fileOpen(memdbg_file_t *file, const char *mode) {

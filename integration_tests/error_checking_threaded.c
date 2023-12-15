@@ -78,7 +78,7 @@ void *checkMalloc(void *UNUSED(unused)) {
     pthread_cond_wait(&gates_open, &gate_mx);
     pthread_mutex_unlock(&gate_mx);
 
-    void *ptrs[3];
+    void *ptrs[2];
     for (int ii = 0; ii < N_RERUNS; ii++) {
         // allocsize0
         ptrs[0] = malloc(0);

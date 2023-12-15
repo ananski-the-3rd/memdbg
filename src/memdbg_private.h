@@ -6,7 +6,7 @@
 #include <time.h>
 #include <string.h>
 #include <stdatomic.h>
-#include "memdbg.h"
+#include "../include/memdbg.h"
 
 
 //----------------NORMAL MACROS----------------//
