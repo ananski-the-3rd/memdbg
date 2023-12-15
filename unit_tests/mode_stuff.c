@@ -4,7 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <immintrin.h>
-#include "../memdbg.h"
+#include "../include/memdbg.h"
 
 uint32_t trueRand(void);
 

@@ -6,7 +6,7 @@
 #include <immintrin.h>
 #include <pthread.h>
 #include <unistd.h>
-#include "../memdbg.h"
+#include "../include/memdbg.h"
 
 #ifdef __GNUC__
 #define UNUSED(x) UNUSED_ ## x __attribute__((__unused__))
